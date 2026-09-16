@@ -585,6 +585,111 @@ def _http_get_text(url, headers=None, timeout=15):
         return resp.read().decode(charset, "replace")
 
 
+# Frigate camera feed caching
+_FRIGATE_CACHE = {}
+_FRIGATE_CACHE_TTL_SECONDS = 60
+
+
+def _get_frigate_images(extras_dict):
+    """
+    Fetch latest images from Frigate NVR for configured cameras.
+    Caches responses for 60 seconds to avoid hammering the API.
+    
+    Args:
+        extras_dict: The [Extras] section from skin.conf as a dict
+    
+    Returns:
+        Dict with structure: {
+            'cameras': [
+                {'name': 'camera_name', 'url': '...', 'error': None, 'timestamp': epoch},
+                ...
+            ],
+            'error': None or error message
+        }
+    """
+    global _FRIGATE_CACHE
+    
+    try:
+        # Check if cache is still valid
+        cache_time = _FRIGATE_CACHE.get('_timestamp', 0)
+        current_time = time.time()
+        if current_time - cache_time < _FRIGATE_CACHE_TTL_SECONDS:
+            return _FRIGATE_CACHE.get('data', {'cameras': [], 'error': 'Not configured'})
+        
+        # Parse configuration
+        enabled = str(extras_dict.get('frigate_enabled', '0')).strip().lower() == '1'
+        if not enabled:
+            return {'cameras': [], 'error': 'Frigate not enabled'}
+        
+        api_url = str(extras_dict.get('frigate_api_url', '')).strip()
+        username = os.environ.get('FRIGATE_USERNAME', '') or str(extras_dict.get('frigate_username', '')).strip()
+        password = os.environ.get('FRIGATE_PASSWORD', '') or str(extras_dict.get('frigate_password', '')).strip()
+        cameras_str = str(extras_dict.get('frigate_cameras', '')).strip()
+        
+        if not api_url or not cameras_str:
+            return {'cameras': [], 'error': 'Frigate API URL or cameras not configured'}
+        
+        # Parse camera list
+        cameras = [c.strip() for c in cameras_str.split(',') if c.strip()]
+        if not cameras:
+            return {'cameras': [], 'error': 'No cameras configured'}
+        
+        # Prepare Basic Auth header if credentials provided
+        headers = None
+        if username and password:
+            import base64
+            auth_str = f"{username}:{password}"
+            auth_b64 = base64.b64encode(auth_str.encode()).decode()
+            headers = {'Authorization': f'Basic {auth_b64}'}
+        
+        # Fetch images for each camera
+        result_cameras = []
+        for camera in cameras:
+            try:
+                url = f"{api_url}/api/{camera}/latest.jpg"
+                req = Request(url, headers=headers or {})
+                # Check if URL is accessible (don't actually download the image)
+                # Just verify the endpoint responds
+                with urlopen(req, timeout=5) as resp:
+                    if resp.status == 200:
+                        result_cameras.append({
+                            'name': camera,
+                            'url': url,
+                            'error': None,
+                            'timestamp': int(time.time())
+                        })
+                    else:
+                        result_cameras.append({
+                            'name': camera,
+                            'url': '',
+                            'error': f'HTTP {resp.status}',
+                            'timestamp': int(time.time())
+                        })
+            except urllib.error.HTTPError as e:
+                result_cameras.append({
+                    'name': camera,
+                    'url': '',
+                    'error': f'HTTP {e.code}',
+                    'timestamp': int(time.time())
+                })
+            except Exception as e:
+                result_cameras.append({
+                    'name': camera,
+                    'url': '',
+                    'error': str(e),
+                    'timestamp': int(time.time())
+                })
+        
+        data = {'cameras': result_cameras, 'error': None}
+        _FRIGATE_CACHE = {'data': data, '_timestamp': current_time}
+        return data
+        
+    except Exception as e:
+        error_msg = f"Frigate fetch error: {str(e)}"
+        log.error(error_msg)
+        return {'cameras': [], 'error': error_msg}
+
+
 def _locale_to_js(locale_value):
     """Normalize a Python/WeeWX locale string for browser APIs."""
     value = str(locale_value or "").strip()
