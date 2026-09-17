@@ -1,10 +1,7 @@
 #encoding UTF-8
-#import json
-#import time
+#errorCatcher Echo
 #from user.new_belchertown import _get_frigate_images
-#set $frigate_data = _get_frigate_images($Extras)
-#set $output = {}
-#set $output['cameras'] = $frigate_data.get('cameras', [])
-#set $output['error'] = $frigate_data.get('error')
-#set $output['timestamp'] = #echo int(time.time()) #
-##echo json.dumps($output)##
+#import json
+#set $data = _get_frigate_images($Extras)
+$json.dumps($data)
+

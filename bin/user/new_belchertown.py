@@ -609,16 +609,25 @@ def _get_frigate_images(extras_dict):
     """
     global _FRIGATE_CACHE
     
+    # Debug: log all environment variables with FRIGATE in the name
+    frigate_env_vars = {k: v for k, v in os.environ.items() if 'FRIGATE' in k.upper()}
+    log.info(f"Frigate: Environment variables found: {frigate_env_vars}")
+    
     try:
         # Check if cache is still valid
-        cache_time = _FRIGATE_CACHE.get('_timestamp', 0)
+        log.info("Starting get_frigate_images")cache_time = _FRIGATE_CACHE.get('_timestamp', 0)
         current_time = time.time()
         if current_time - cache_time < _FRIGATE_CACHE_TTL_SECONDS:
+            log.debug(f"Frigate: Using cached data (age: {current_time - cache_time:.1f}s)")
             return _FRIGATE_CACHE.get('data', {'cameras': [], 'error': 'Not configured'})
+        
+        log.debug("Frigate: Cache expired or empty, fetching new data")
         
         # Parse configuration
         enabled = str(extras_dict.get('frigate_enabled', '0')).strip().lower() == '1'
+        log.info(f"Frigate: enabled={enabled}")
         if not enabled:
+            log.debug("Frigate: Feature disabled in config")
             return {'cameras': [], 'error': 'Frigate not enabled'}
         
         api_url = str(extras_dict.get('frigate_api_url', '')).strip()
@@ -626,32 +635,44 @@ def _get_frigate_images(extras_dict):
         password = os.environ.get('FRIGATE_PASSWORD', '') or str(extras_dict.get('frigate_password', '')).strip()
         cameras_str = str(extras_dict.get('frigate_cameras', '')).strip()
         
+        log.info(f"Frigate: username={username if username else '(none)'}, password={'***' if password else '(none)'}")
+        log.debug(f"Frigate: api_url={api_url}, cameras_str={cameras_str}, has_auth={bool(username and password)}")
+        
         if not api_url or not cameras_str:
+            log.warning("Frigate: Missing API URL or camera list")
             return {'cameras': [], 'error': 'Frigate API URL or cameras not configured'}
         
         # Parse camera list
         cameras = [c.strip() for c in cameras_str.split(',') if c.strip()]
         if not cameras:
+            log.warning("Frigate: No cameras found in config")
             return {'cameras': [], 'error': 'No cameras configured'}
         
+        log.info(f"Frigate: Fetching data for {len(cameras)} cameras: {cameras}")
+        
         # Prepare Basic Auth header if credentials provided
-        headers = None
+        headers = {
+            'User-Agent': 'WeeWX-Belchertown/1.0'
+        }
         if username and password:
             import base64
             auth_str = f"{username}:{password}"
             auth_b64 = base64.b64encode(auth_str.encode()).decode()
-            headers = {'Authorization': f'Basic {auth_b64}'}
+            headers['Authorization'] = f'Basic {auth_b64}'
+            log.info(f"Frigate: Auth header = Basic {auth_b64[:20]}...")
         
         # Fetch images for each camera
         result_cameras = []
         for camera in cameras:
             try:
                 url = f"{api_url}/api/{camera}/latest.jpg"
-                req = Request(url, headers=headers or {})
-                # Check if URL is accessible (don't actually download the image)
-                # Just verify the endpoint responds
+                log.info(f"Frigate: Requesting {url} with headers: {headers}")
+                req = Request(url, headers=headers)
+                log.info(f"Frigate: About to call urlopen for {camera}")
                 with urlopen(req, timeout=5) as resp:
+                    log.info(f"Frigate: urlopen succeeded for {camera}, status={resp.status}")
                     if resp.status == 200:
+                        log.debug(f"Frigate: Camera {camera} OK (HTTP 200)")
                         result_cameras.append({
                             'name': camera,
                             'url': url,
@@ -659,6 +680,7 @@ def _get_frigate_images(extras_dict):
                             'timestamp': int(time.time())
                         })
                     else:
+                        log.warning(f"Frigate: Camera {camera} HTTP {resp.status}")
                         result_cameras.append({
                             'name': camera,
                             'url': '',
@@ -666,13 +688,24 @@ def _get_frigate_images(extras_dict):
                             'timestamp': int(time.time())
                         })
             except urllib.error.HTTPError as e:
+                log.info(f"Frigate: HTTPError for {camera}: code={e.code}, headers={dict(e.headers)}")
+                log.warning(f"Frigate: Camera {camera} HTTP error {e.code}")
                 result_cameras.append({
                     'name': camera,
                     'url': '',
                     'error': f'HTTP {e.code}',
                     'timestamp': int(time.time())
                 })
+            except urllib.error.URLError as e:
+                log.error(f"Frigate: URLError for {camera}: {str(e)}")
+                result_cameras.append({
+                    'name': camera,
+                    'url': '',
+                    'error': f'Connection error: {str(e)}',
+                    'timestamp': int(time.time())
+                })
             except Exception as e:
+                log.warning(f"Frigate: Camera {camera} error: {str(e)}")
                 result_cameras.append({
                     'name': camera,
                     'url': '',
@@ -682,6 +715,7 @@ def _get_frigate_images(extras_dict):
         
         data = {'cameras': result_cameras, 'error': None}
         _FRIGATE_CACHE = {'data': data, '_timestamp': current_time}
+        log.info(f"Frigate: Successfully cached {len(result_cameras)} camera(s)")
         return data
         
     except Exception as e:

@@ -31,6 +31,8 @@
         (function() {
             var frigateRefreshIntervalMs = ($Extras.frigate_refresh_interval_minutes || 2) * 60000;
             var frigateGridElement = document.getElementById('frigate-camera-grid');
+            console.log('Frigate module initialized. Refresh interval:', frigateRefreshIntervalMs, 'ms');
+            console.log('Frigate config - enabled:', '$Extras.frigate_enabled', 'cameras:', '$Extras.frigate_cameras');
             
             function formatTimestamp(epoch) {
                 if (!epoch || typeof dayjs === 'undefined') return '';
@@ -42,27 +44,37 @@
             }
             
             function updateFrigateCameras() {
-                if (!frigateGridElement) return;
+                if (!frigateGridElement) {
+                    console.error('Frigate: camera grid element not found');
+                    return;
+                }
                 
-                var url = get_relative_url() + '/json/frigate_cameras.json?t=' + Date.now();
+                var url = '/json/frigate_cameras.json?t=' + Date.now();
+                console.log('Frigate: Fetching from:', url);
                 
                 fetch(url, { cache: 'no-store' })
                     .then(function(response) {
-                        if (!response.ok) throw new Error('Network response was not ok');
+                        console.log('Frigate: Fetch response status:', response.status, response.statusText);
+                        if (!response.ok) throw new Error('Network response was not ok (' + response.status + ')');
                         return response.json();
                     })
                     .then(function(data) {
+                        console.log('Frigate: JSON response received:', data);
                         if (!data.cameras || data.cameras.length === 0) {
-                            frigateGridElement.innerHTML = '<div class="col-12"><div class="alert alert-warning">No cameras available or Frigate API error: ' + (data.error || 'Unknown error') + '</div></div>';
+                            var errorMsg = 'No cameras available or Frigate API error: ' + (data.error || 'Unknown error');
+                            console.warn('Frigate:', errorMsg);
+                            frigateGridElement.innerHTML = '<div class="col-12"><div class="alert alert-warning">' + errorMsg + '</div></div>';
                             return;
                         }
                         
+                        console.log('Frigate: Found', data.cameras.length, 'cameras');
                         var html = '';
                         data.cameras.forEach(function(camera) {
                             var timestamp = formatTimestamp(camera.timestamp);
                             var timestampHtml = timestamp ? '<small class="text-muted d-block mt-2">Updated: ' + timestamp + '</small>' : '';
                             
                             if (camera.error) {
+                                console.warn('Frigate camera error for', camera.name + ':', camera.error);
                                 html += '<div class="col-md-4">';
                                 html += '  <div class="card h-100">';
                                 html += '    <div class="card-body text-center">';
@@ -93,8 +105,8 @@
                         frigateGridElement.innerHTML = html;
                     })
                     .catch(function(error) {
+                        console.error('Frigate: Fetch failed:', error);
                         frigateGridElement.innerHTML = '<div class="col-12"><div class="alert alert-danger">Failed to load camera feeds: ' + error.message + '</div></div>';
-                        belchertown_debug('Frigate camera fetch error: ' + error.message);
                     });
             }
             
@@ -107,6 +119,7 @@
             // Refresh when page becomes visible
             document.addEventListener('visibilitychange', function() {
                 if (!document.hidden) {
+                    console.log('Frigate: Page became visible, refreshing cameras');
                     updateFrigateCameras();
                 }
             });
