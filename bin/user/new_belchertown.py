@@ -609,13 +609,9 @@ def _get_frigate_images(extras_dict):
     """
     global _FRIGATE_CACHE
     
-    # Debug: log all environment variables with FRIGATE in the name
-    frigate_env_vars = {k: v for k, v in os.environ.items() if 'FRIGATE' in k.upper()}
-    log.info(f"Frigate: Environment variables found: {frigate_env_vars}")
-    
     try:
         # Check if cache is still valid
-        log.info("Starting get_frigate_images")cache_time = _FRIGATE_CACHE.get('_timestamp', 0)
+        cache_time = _FRIGATE_CACHE.get('_timestamp', 0)
         current_time = time.time()
         if current_time - cache_time < _FRIGATE_CACHE_TTL_SECONDS:
             log.debug(f"Frigate: Using cached data (age: {current_time - cache_time:.1f}s)")
@@ -625,7 +621,6 @@ def _get_frigate_images(extras_dict):
         
         # Parse configuration
         enabled = str(extras_dict.get('frigate_enabled', '0')).strip().lower() == '1'
-        log.info(f"Frigate: enabled={enabled}")
         if not enabled:
             log.debug("Frigate: Feature disabled in config")
             return {'cameras': [], 'error': 'Frigate not enabled'}
@@ -635,7 +630,6 @@ def _get_frigate_images(extras_dict):
         password = os.environ.get('FRIGATE_PASSWORD', '') or str(extras_dict.get('frigate_password', '')).strip()
         cameras_str = str(extras_dict.get('frigate_cameras', '')).strip()
         
-        log.info(f"Frigate: username={username if username else '(none)'}, password={'***' if password else '(none)'}")
         log.debug(f"Frigate: api_url={api_url}, cameras_str={cameras_str}, has_auth={bool(username and password)}")
         
         if not api_url or not cameras_str:
@@ -648,8 +642,6 @@ def _get_frigate_images(extras_dict):
             log.warning("Frigate: No cameras found in config")
             return {'cameras': [], 'error': 'No cameras configured'}
         
-        log.info(f"Frigate: Fetching data for {len(cameras)} cameras: {cameras}")
-        
         # Prepare Basic Auth header if credentials provided
         headers = {
             'User-Agent': 'WeeWX-Belchertown/1.0'
@@ -659,18 +651,14 @@ def _get_frigate_images(extras_dict):
             auth_str = f"{username}:{password}"
             auth_b64 = base64.b64encode(auth_str.encode()).decode()
             headers['Authorization'] = f'Basic {auth_b64}'
-            log.info(f"Frigate: Auth header = Basic {auth_b64[:20]}...")
         
         # Fetch images for each camera
         result_cameras = []
         for camera in cameras:
             try:
                 url = f"{api_url}/api/{camera}/latest.jpg"
-                log.info(f"Frigate: Requesting {url} with headers: {headers}")
                 req = Request(url, headers=headers)
-                log.info(f"Frigate: About to call urlopen for {camera}")
                 with urlopen(req, timeout=5) as resp:
-                    log.info(f"Frigate: urlopen succeeded for {camera}, status={resp.status}")
                     if resp.status == 200:
                         log.debug(f"Frigate: Camera {camera} OK (HTTP 200)")
                         result_cameras.append({
@@ -715,7 +703,6 @@ def _get_frigate_images(extras_dict):
         
         data = {'cameras': result_cameras, 'error': None}
         _FRIGATE_CACHE = {'data': data, '_timestamp': current_time}
-        log.info(f"Frigate: Successfully cached {len(result_cameras)} camera(s)")
         return data
         
     except Exception as e:
@@ -5384,7 +5371,7 @@ class getData(SearchList):
         )
 
     @staticmethod
-    def _get_noaa_search_list_values(html_root):
+    def _get_noaa_search_list_values(html_root, skin_dict=None):
         """Return the NOAA index, which can change as templates are generated."""
         years = set()
         noaa_header_html = ""
@@ -5392,6 +5379,14 @@ class getData(SearchList):
         noaa_file_list = []
         noaa_relative_dir = "noaa"
         noaa_dir = os.path.join(html_root, noaa_relative_dir)
+        
+        # Get the reports_start_year from skin configuration
+        reports_start_year = 1970  # Default fallback
+        if skin_dict and "Extras" in skin_dict:
+            try:
+                reports_start_year = int(skin_dict["Extras"].get("reports_start_year", 1970))
+            except (ValueError, TypeError):
+                reports_start_year = 1970
 
         try:
             # Use directory entries to compare spelling. On a case-insensitive
@@ -5425,7 +5420,10 @@ class getData(SearchList):
             for f in noaa_file_list:
                 noaa_file_match = noaa_file_pattern.match(f)
                 if noaa_file_match:
-                    years.add(noaa_file_match.group(1))
+                    year = int(noaa_file_match.group(1))
+                    # Only include years at or after the start year
+                    if year >= reports_start_year:
+                        years.add(noaa_file_match.group(1))
 
             years = sorted(years, reverse=True)
 
@@ -5742,7 +5740,7 @@ class getData(SearchList):
                 timespan, db_lookup
             )
             search_list_extension.update(
-                self._get_noaa_search_list_values(self._shared_html_root)
+                self._get_noaa_search_list_values(self._shared_html_root, self.generator.skin_dict)
             )
             return [search_list_extension]
 
@@ -6730,7 +6728,7 @@ class getData(SearchList):
         # ==============================================================================
         # Get NOAA Data
         # ==============================================================================
-        noaa_search_list_values = self._get_noaa_search_list_values(html_root)
+        noaa_search_list_values = self._get_noaa_search_list_values(html_root, skin_dict)
 
         # ==============================================================================
         # Forecast Data
