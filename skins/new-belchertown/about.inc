@@ -78,7 +78,7 @@
                                 html += '<div class="col-md-4">';
                                 html += '  <div class="card h-100">';
                                 html += '    <div class="card-body text-center">';
-                                html += '      <h5 class="card-title">' + camera.name + '</h5>';
+                                html += '      <h5 class="card-title">' + (camera.title || camera.name) + '</h5>';
                                 html += '      <div style="background: #f0f0f0; height: 240px; display: flex; align-items: center; justify-content: center; border-radius: 4px;">';
                                 html += '        <div>';
                                 html += '          <i class="fa fa-camera" style="font-size: 48px; color: #999; margin-bottom: 12px;"></i>';
@@ -94,7 +94,7 @@
                                 html += '  <div class="card h-100">';
                                 html += '    <img src="' + camera.url + '?t=' + Date.now() + '" alt="' + camera.name + '" class="card-img-top img-fluid" style="max-height: 300px; object-fit: cover;" loading="lazy">';
                                 html += '    <div class="card-body">';
-                                html += '      <h5 class="card-title">' + camera.name + '</h5>';
+                                html += '      <h5 class="card-title">' + (camera.title || camera.name) + '</h5>';
                                 html += timestampHtml;
                                 html += '    </div>';
                                 html += '  </div>';

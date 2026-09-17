@@ -1,7 +1,13 @@
 #encoding UTF-8
 #errorCatcher Echo
+#import sys
+#import logging
+#set $log = logging.getLogger('frigate_template')
+$log.warning("TEMPLATE: frigate_cameras.json.tmpl started")
 #from user.new_belchertown import _get_frigate_images
 #import json
+$log.warning("TEMPLATE: About to call _get_frigate_images with extras keys: " + str(list($Extras.keys())[:10]))
 #set $data = _get_frigate_images($Extras)
+$log.warning("TEMPLATE: Got data from _get_frigate_images")
 $json.dumps($data)
 

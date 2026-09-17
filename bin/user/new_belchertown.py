@@ -590,18 +590,20 @@ _FRIGATE_CACHE = {}
 _FRIGATE_CACHE_TTL_SECONDS = 60
 
 
-def _get_frigate_images(extras_dict):
+def _get_frigate_images(extras_dict, skin_dict=None):
     """
     Fetch latest images from Frigate NVR for configured cameras.
     Caches responses for 60 seconds to avoid hammering the API.
     
     Args:
-        extras_dict: The [Extras] section from skin.conf as a dict
+        extras_dict: The [Extras] section from skin.conf as a dict.
+                     Contains camera settings under keys like 'camera_CAMERANAME'
+        skin_dict: (Optional, for compatibility) Full skin dict
     
     Returns:
         Dict with structure: {
             'cameras': [
-                {'name': 'camera_name', 'url': '...', 'error': None, 'timestamp': epoch},
+                {'name': 'camera_name', 'title': 'Camera Title', 'url': '...', 'error': None, 'timestamp': epoch},
                 ...
             ],
             'error': None or error message
@@ -610,6 +612,13 @@ def _get_frigate_images(extras_dict):
     global _FRIGATE_CACHE
     
     try:
+        # DEBUG: Print all keys in extras_dict to understand structure
+        log.info(f"Frigate: DEBUG - extras_dict keys: {list(extras_dict.keys())}")
+        camera_keys = [k for k in extras_dict.keys() if 'camera' in k.lower()]
+        log.info(f"Frigate: DEBUG - camera-related keys: {camera_keys}")
+        for key in camera_keys:
+            log.info(f"Frigate: DEBUG - {key} = {extras_dict.get(key)}")
+        
         # Check if cache is still valid
         cache_time = _FRIGATE_CACHE.get('_timestamp', 0)
         current_time = time.time()
@@ -656,13 +665,19 @@ def _get_frigate_images(extras_dict):
         result_cameras = []
         for camera in cameras:
             try:
-                url = f"{api_url}/api/{camera}/latest.jpg"
+                # Get per-camera configuration (title and optional api_url override)
+                # Using flat key names: camera_CAMERANAME_title, camera_CAMERANAME_api_url
+                title = extras_dict.get(f'camera_{camera}_title', camera)
+                camera_api_url = extras_dict.get(f'camera_{camera}_api_url', api_url)
+                
+                url = f"{camera_api_url}/api/{camera}/latest.jpg"
                 req = Request(url, headers=headers)
                 with urlopen(req, timeout=5) as resp:
                     if resp.status == 200:
                         log.debug(f"Frigate: Camera {camera} OK (HTTP 200)")
                         result_cameras.append({
                             'name': camera,
+                            'title': title,
                             'url': url,
                             'error': None,
                             'timestamp': int(time.time())
@@ -671,6 +686,7 @@ def _get_frigate_images(extras_dict):
                         log.warning(f"Frigate: Camera {camera} HTTP {resp.status}")
                         result_cameras.append({
                             'name': camera,
+                            'title': title,
                             'url': '',
                             'error': f'HTTP {resp.status}',
                             'timestamp': int(time.time())
@@ -678,24 +694,33 @@ def _get_frigate_images(extras_dict):
             except urllib.error.HTTPError as e:
                 log.info(f"Frigate: HTTPError for {camera}: code={e.code}, headers={dict(e.headers)}")
                 log.warning(f"Frigate: Camera {camera} HTTP error {e.code}")
+                camera_config = extras_dict.get(f'camera_{camera}', {})
+                title = camera_config.get('title', camera) if isinstance(camera_config, dict) else camera
                 result_cameras.append({
                     'name': camera,
+                    'title': title,
                     'url': '',
                     'error': f'HTTP {e.code}',
                     'timestamp': int(time.time())
                 })
             except urllib.error.URLError as e:
                 log.error(f"Frigate: URLError for {camera}: {str(e)}")
+                camera_config = extras_dict.get(f'camera_{camera}', {})
+                title = camera_config.get('title', camera) if isinstance(camera_config, dict) else camera
                 result_cameras.append({
                     'name': camera,
+                    'title': title,
                     'url': '',
                     'error': f'Connection error: {str(e)}',
                     'timestamp': int(time.time())
                 })
             except Exception as e:
                 log.warning(f"Frigate: Camera {camera} error: {str(e)}")
+                camera_config = extras_dict.get(f'camera_{camera}', {})
+                title = camera_config.get('title', camera) if isinstance(camera_config, dict) else camera
                 result_cameras.append({
                     'name': camera,
+                    'title': title,
                     'url': '',
                     'error': str(e),
                     'timestamp': int(time.time())
@@ -8357,9 +8382,9 @@ class getData(SearchList):
         # Social Share
         # ==============================================================================
 
-        facebook_enabled = extras_dict["facebook_enabled"]
-        twitter_enabled = extras_dict["twitter_enabled"]
-        social_share_html = extras_dict["social_share_html"]
+        facebook_enabled = extras_dict.get("facebook_enabled", "0")
+        twitter_enabled = extras_dict.get("twitter_enabled", "0")
+        social_share_html = extras_dict.get("social_share_html", "")
         twitter_text = label_dict["twitter_text"]
         twitter_owner = label_dict["twitter_owner"]
         twitter_hashtags = label_dict["twitter_hashtags"]
@@ -8411,19 +8436,19 @@ class getData(SearchList):
         # MQTT settings for Kiosk page
         # ==============================================================================
 
-        if extras_dict["mqtt_websockets_host_kiosk"] != "":
-            if extras_dict["mqtt_websockets_port_kiosk"] != "":
-                mqtt_websockets_port_kiosk = extras_dict["mqtt_websockets_port_kiosk"]
+        if extras_dict.get("mqtt_websockets_host_kiosk", "") != "":
+            if extras_dict.get("mqtt_websockets_port_kiosk", "") != "":
+                mqtt_websockets_port_kiosk = extras_dict.get("mqtt_websockets_port_kiosk", "")
             else:
-                mqtt_websockets_port_kiosk = extras_dict["mqtt_websockets_port"]
-            if extras_dict["mqtt_websockets_ssl_kiosk"] != "":
-                mqtt_websockets_ssl_kiosk = extras_dict["mqtt_websockets_ssl_kiosk"]
+                mqtt_websockets_port_kiosk = extras_dict.get("mqtt_websockets_port", "")
+            if extras_dict.get("mqtt_websockets_ssl_kiosk", "") != "":
+                mqtt_websockets_ssl_kiosk = extras_dict.get("mqtt_websockets_ssl_kiosk", "")
             else:
-                mqtt_websockets_ssl_kiosk = extras_dict["mqtt_websockets_ssl"]
+                mqtt_websockets_ssl_kiosk = extras_dict.get("mqtt_websockets_ssl", "")
         else:
-            mqtt_websockets_port_kiosk = extras_dict["mqtt_websockets_host"]
-            mqtt_websockets_port_kiosk = extras_dict["mqtt_websockets_port"]
-            mqtt_websockets_ssl_kiosk = extras_dict["mqtt_websockets_ssl"]
+            mqtt_websockets_port_kiosk = extras_dict.get("mqtt_websockets_host", "")
+            mqtt_websockets_port_kiosk = extras_dict.get("mqtt_websockets_port", "")
+            mqtt_websockets_ssl_kiosk = extras_dict.get("mqtt_websockets_ssl", "")
 
         # Include custom.css if it exists in the HTML_ROOT folder
         custom_css_file = html_root + "/custom.css"
