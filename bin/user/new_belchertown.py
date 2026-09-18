@@ -687,8 +687,7 @@ def _get_frigate_images(extras_dict, skin_dict=None):
             except urllib.error.HTTPError as e:
                 log.info(f"Frigate: HTTPError for {camera}: code={e.code}, headers={dict(e.headers)}")
                 log.warning(f"Frigate: Camera {camera} HTTP error {e.code}")
-                camera_config = extras_dict.get(f'camera_{camera}', {})
-                title = camera_config.get('title', camera) if isinstance(camera_config, dict) else camera
+                title = extras_dict.get(f'camera_{camera}_title', camera)
                 result_cameras.append({
                     'name': camera,
                     'title': title,
@@ -698,8 +697,7 @@ def _get_frigate_images(extras_dict, skin_dict=None):
                 })
             except urllib.error.URLError as e:
                 log.error(f"Frigate: URLError for {camera}: {str(e)}")
-                camera_config = extras_dict.get(f'camera_{camera}', {})
-                title = camera_config.get('title', camera) if isinstance(camera_config, dict) else camera
+                title = extras_dict.get(f'camera_{camera}_title', camera)
                 result_cameras.append({
                     'name': camera,
                     'title': title,
@@ -709,8 +707,7 @@ def _get_frigate_images(extras_dict, skin_dict=None):
                 })
             except Exception as e:
                 log.warning(f"Frigate: Camera {camera} error: {str(e)}")
-                camera_config = extras_dict.get(f'camera_{camera}', {})
-                title = camera_config.get('title', camera) if isinstance(camera_config, dict) else camera
+                title = extras_dict.get(f'camera_{camera}_title', camera)
                 result_cameras.append({
                     'name': camera,
                     'title': title,
