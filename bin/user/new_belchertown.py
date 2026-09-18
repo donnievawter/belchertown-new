@@ -612,13 +612,6 @@ def _get_frigate_images(extras_dict, skin_dict=None):
     global _FRIGATE_CACHE
     
     try:
-        # DEBUG: Print all keys in extras_dict to understand structure
-        log.info(f"Frigate: DEBUG - extras_dict keys: {list(extras_dict.keys())}")
-        camera_keys = [k for k in extras_dict.keys() if 'camera' in k.lower()]
-        log.info(f"Frigate: DEBUG - camera-related keys: {camera_keys}")
-        for key in camera_keys:
-            log.info(f"Frigate: DEBUG - {key} = {extras_dict.get(key)}")
-        
         # Check if cache is still valid
         cache_time = _FRIGATE_CACHE.get('_timestamp', 0)
         current_time = time.time()
