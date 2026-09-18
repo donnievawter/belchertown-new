@@ -593,6 +593,7 @@ _FRIGATE_CACHE_TTL_SECONDS = 60
 def _get_frigate_images(extras_dict, skin_dict=None):
     """
     Fetch latest images from Frigate NVR for configured cameras.
+    Saves images locally to output directory and serves via WeeWX proxy.
     Caches responses for 60 seconds to avoid hammering the API.
     
     Args:
@@ -603,7 +604,7 @@ def _get_frigate_images(extras_dict, skin_dict=None):
     Returns:
         Dict with structure: {
             'cameras': [
-                {'name': 'camera_name', 'title': 'Camera Title', 'url': '...', 'error': None, 'timestamp': epoch},
+                {'name': 'camera_name', 'title': 'Camera Title', 'url': '/images/frigate/...', 'error': None, 'timestamp': epoch},
                 ...
             ],
             'error': None or error message
@@ -654,8 +655,18 @@ def _get_frigate_images(extras_dict, skin_dict=None):
             auth_b64 = base64.b64encode(auth_str.encode()).decode()
             headers['Authorization'] = f'Basic {auth_b64}'
         
+        # Ensure output directory exists for storing images
+        output_dir = os.path.join(os.environ.get('WEEWX_ROOT', '/home/weather/weewx-data'), 'new-belchertown', 'images', 'frigate')
+        try:
+            os.makedirs(output_dir, exist_ok=True)
+        except Exception as e:
+            log.warning(f"Frigate: Could not create output directory {output_dir}: {str(e)}")
+            return {'cameras': [], 'error': f'Cannot create image directory: {str(e)}'}
+        
         # Fetch images for each camera
         result_cameras = []
+        timestamp = int(time.time())
+        
         for camera in cameras:
             try:
                 # Get per-camera configuration (title and optional api_url override)
@@ -663,17 +674,30 @@ def _get_frigate_images(extras_dict, skin_dict=None):
                 title = extras_dict.get(f'camera_{camera}_title', camera)
                 camera_api_url = extras_dict.get(f'camera_{camera}_api_url', api_url)
                 
+                # Fetch image from Frigate
                 url = f"{camera_api_url}/api/{camera}/latest.jpg"
                 req = Request(url, headers=headers)
+                
                 with urlopen(req, timeout=5) as resp:
                     if resp.status == 200:
-                        log.debug(f"Frigate: Camera {camera} OK (HTTP 200)")
+                        # Read image binary data
+                        image_data = resp.read()
+                        
+                        # Save image to disk
+                        output_file = os.path.join(output_dir, f"{camera}.jpg")
+                        with open(output_file, 'wb') as f:
+                            f.write(image_data)
+                        
+                        log.debug(f"Frigate: Camera {camera} saved ({len(image_data)} bytes)")
+                        
+                        # Return local URL with cache-busting query param
+                        local_url = f"/images/frigate/{camera}.jpg?t={timestamp}"
                         result_cameras.append({
                             'name': camera,
                             'title': title,
-                            'url': url,
+                            'url': local_url,
                             'error': None,
-                            'timestamp': int(time.time())
+                            'timestamp': timestamp
                         })
                     else:
                         log.warning(f"Frigate: Camera {camera} HTTP {resp.status}")
@@ -682,7 +706,7 @@ def _get_frigate_images(extras_dict, skin_dict=None):
                             'title': title,
                             'url': '',
                             'error': f'HTTP {resp.status}',
-                            'timestamp': int(time.time())
+                            'timestamp': timestamp
                         })
             except urllib.error.HTTPError as e:
                 log.info(f"Frigate: HTTPError for {camera}: code={e.code}, headers={dict(e.headers)}")
@@ -693,7 +717,7 @@ def _get_frigate_images(extras_dict, skin_dict=None):
                     'title': title,
                     'url': '',
                     'error': f'HTTP {e.code}',
-                    'timestamp': int(time.time())
+                    'timestamp': timestamp
                 })
             except urllib.error.URLError as e:
                 log.error(f"Frigate: URLError for {camera}: {str(e)}")
@@ -703,7 +727,7 @@ def _get_frigate_images(extras_dict, skin_dict=None):
                     'title': title,
                     'url': '',
                     'error': f'Connection error: {str(e)}',
-                    'timestamp': int(time.time())
+                    'timestamp': timestamp
                 })
             except Exception as e:
                 log.warning(f"Frigate: Camera {camera} error: {str(e)}")
@@ -713,7 +737,7 @@ def _get_frigate_images(extras_dict, skin_dict=None):
                     'title': title,
                     'url': '',
                     'error': str(e),
-                    'timestamp': int(time.time())
+                    'timestamp': timestamp
                 })
         
         data = {'cameras': result_cameras, 'error': None}
